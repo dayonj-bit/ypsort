@@ -174,6 +174,7 @@ button:focus-visible { outline: 3px solid var(--blue-3); outline-offset: 2px; }
       <button class="btn blue" type="button" id="share">공유하기</button>
     </div>
     <div class="gutter" style="padding-bottom:calc(env(safe-area-inset-bottom,0px) + 20px);text-align:center">
+      <p id="notice" style="margin:0 0 4px;font-size:11px;color:var(--vs)">완료한 결과는 이름 없이 통계용으로 저장돼요</p>
       <button type="button" id="again" style="background:none;border:0;color:var(--vs);font-size:13px;font-weight:500;padding:8px;cursor:pointer;text-decoration:underline">처음부터 다시 하기</button>
     </div>
   </section>
@@ -238,7 +239,7 @@ function* tournament(order) {
 }
 
 let order = [], answers = [], current = null, picked = null, finalList = null, shared = false;
-function save() { try { localStorage.setItem(STORE, JSON.stringify({ order, answers })); } catch (e) {} }
+function save() { try { localStorage.setItem(STORE, JSON.stringify({ order, answers, skips })); } catch (e) {} }
 function clearSave() { try { localStorage.removeItem(STORE); } catch (e) {} }
 function load() { try { const v = JSON.parse(localStorage.getItem(STORE) || "null"); return v && Array.isArray(v.order) && v.order.length === N && Array.isArray(v.answers) ? v : null; } catch (e) { return null; } }
 function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
@@ -251,11 +252,32 @@ function advance(animate) {
     current = r.value; showDuel(animate); return;
   }
   current = null; finalList = r.value; clearSave(); shared = false;
+  logResult(finalList);
   $("next").disabled = true; $("skip").disabled = true;
   $("barFill").style.width = "100%"; $("pct").textContent = "100%"; $("round").textContent = "";
   showAnalyzing(() => { $("skip").disabled = false; showResult(); });
 }
-function newRun() { order = shuffle([...Array(N).keys()]); answers = []; save(); advance(false); }
+function newRun() { order = shuffle([...Array(N).keys()]); answers = []; skips = 0; save(); advance(false); }
+
+/* ---------- Supabase: anonymous, insert-only result log ---------- */
+const SB_URL = "https://hxipaxrosozpnvuwchrk.supabase.co";
+const SB_KEY = "sb_publishable_aJwLyEfF3py9NN8o7OfEfw_D8Nnpk41";
+let skips = 0;
+function logResult(list) {
+  try {
+    const rows = ranked(list);
+    fetch(SB_URL + "/rest/v1/results", {
+      method: "POST", keepalive: true,
+      headers: { "apikey": SB_KEY, "Content-Type": "application/json", "Prefer": "return=minimal" },
+      body: JSON.stringify({
+        code: encode(list),
+        champion: kName(list[0]) + "×" + pName(list[0]),
+        ranking: rows.map(r => `${r.rank}위 ${kName(r.c)}×${pName(r.c)}`),
+        skips
+      })
+    }).catch(() => {});
+  } catch (e) {}
+}
 
 /* ---------- duel ---------- */
 const CHECK = '<svg viewBox="0 0 14 14" fill="none"><path d="M2.5 7.3l2.8 2.8 6.2-6.4" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -301,7 +323,7 @@ $("optA").onclick = () => setPick(picked === 0 ? null : 0);
 $("optB").onclick = () => setPick(picked === 1 ? null : 1);
 function commit(v) { if (!current) return; answers.push(v); save(); advance(true); }
 $("next").onclick = () => { if (picked !== null) commit(picked); };
-$("skip").onclick = () => { const v = Math.random() < .5 ? 0 : 1; toast("둘 중 하나를 무작위로 올렸어요"); commit(v); };
+$("skip").onclick = () => { skips++; const v = Math.random() < .5 ? 0 : 1; toast("둘 중 하나를 무작위로 올렸어요"); commit(v); };
 
 /* ---------- analyzing overlay ---------- */
 const ANA_TEXT = "내 취향을 분석 중이에요";
@@ -448,7 +470,7 @@ function showOnboard(onLeave) {
   if (g) { finalList = g; shared = true; showResult(); return; }
   const s = load();
   if (s && s.order.every(i => Number.isInteger(i) && i >= 0 && i < N) && new Set(s.order).size === N) {
-    order = s.order; answers = s.answers.filter(v => v === 0 || v === 1).slice(0, TOTAL - 1);
+    order = s.order; answers = s.answers.filter(v => v === 0 || v === 1).slice(0, TOTAL - 1); skips = Number.isInteger(s.skips) ? s.skips : 0;
     advance(false); toast("하던 소트를 이어서 해요"); return;
   }
   showOnboard(newRun);
