@@ -355,7 +355,7 @@ function ranked(list) {
 }
 function showResult() {
   showOnly("result");
-  setHash("#r=" + encode(finalList));
+  setAddr("?r=" + encode(finalList));
   $("sub").textContent = shared ? "친구의 영필 취향은" : "나의 영필 취향은";
   const box = $("rows"); box.replaceChildren();
   for (const { rank, c } of ranked(finalList)) {
@@ -367,7 +367,7 @@ function showResult() {
   $("again").textContent = shared ? "나도 해 보기" : "처음부터 다시 하기";
 }
 // some embedded viewers block address-bar changes; the result must render regardless
-function setHash(hh) { try { history.replaceState(null, "", location.pathname + location.search + hh); } catch (e) {} }
+function setAddr(qs) { try { history.replaceState(null, "", location.pathname + qs); } catch (e) {} }
 function encode(list) { return list.map(c => c.toString(36)).join(""); }
 function decode(s) {
   if (!/^[0-9a-z]{16}$/.test(s)) return null;
@@ -375,7 +375,8 @@ function decode(s) {
   if (v.some(x => x >= N) || new Set(v).size !== v.length) return null;
   return v;
 }
-function shareURL() { return location.origin + location.pathname + "#r=" + encode(finalList); }
+// "?r=" (not "#r=") so X treats every result as a new link and reads the thumbnail fresh
+function shareURL() { return location.origin + location.pathname + "?r=" + encode(finalList); }
 function resultText() {
   return ["YP SORT · 나의 영필 취향은", ...ranked(finalList).slice(0, 8).map(r => `${r.rank}위 ${kName(r.c)} × ${pName(r.c)}`), "", shareURL()].join("\n");
 }
@@ -391,7 +392,7 @@ $("share").onclick = () => {
   const u = "https://twitter.com/intent/tweet?text=" + encodeURIComponent(text) + "&url=" + encodeURIComponent(shareURL());
   const a = el("a"); a.href = u; a.target = "_blank"; a.rel = "noopener"; document.body.append(a); a.click(); a.remove();
 };
-$("again").onclick = () => { setHash(""); newRun(); };
+$("again").onclick = () => { setAddr(""); newRun(); };
 
 /* image: the result screen as drawn in the design, at 3x */
 $("saveImg").onclick = async () => {
@@ -465,7 +466,8 @@ function showOnboard(onLeave) {
 
 /* ---------- boot ---------- */
 (function boot() {
-  const m = location.hash.match(/^#r=([0-9a-z]+)$/);
+  const q = new URLSearchParams(location.search).get("r");
+  const m = q ? [null, q] : location.hash.match(/^#r=([0-9a-z]+)$/);
   const g = m && decode(m[1]);
   if (g) { finalList = g; shared = true; showResult(); return; }
   const s = load();
